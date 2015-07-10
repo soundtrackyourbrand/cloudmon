@@ -12,8 +12,11 @@ import (
 const prefix = "custom.cloudmonitoring.googleapis.com/"
 
 type Client interface {
-	CreateMetric(name string) error
-	WriteInt(name string, value int64) error
+	NewGauge(name string) (Gauge, error)
+}
+
+type Gauge interface {
+	Set(value int64) error
 }
 
 type client struct {
@@ -22,57 +25,9 @@ type client struct {
 	projectID       string
 }
 
-func (c *client) CreateMetric(name string) error {
-	cloud, err := cloudmonitorClient(c.oauthEmail, c.oauthPrivateKey)
-	if err != nil {
-		return err
-	}
-
-	req := &cloudmonitoring.MetricDescriptor{
-		Name:    prefix + name,
-		Project: c.projectID,
-		TypeDescriptor: &cloudmonitoring.MetricDescriptorTypeDescriptor{
-			MetricType: "gauge",
-			ValueType:  "int64",
-		},
-	}
-
-	_, err = cloud.MetricDescriptors.Create(c.projectID, req).Do()
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *client) WriteInt(name string, value int64) error {
-	cloud, err := cloudmonitorClient(c.oauthEmail, c.oauthPrivateKey)
-	if err != nil {
-		return err
-	}
-
-	_, err = cloud.Timeseries.Write(c.projectID, &cloudmonitoring.WriteTimeseriesRequest{
-		Timeseries: []*cloudmonitoring.TimeseriesPoint{
-			&cloudmonitoring.TimeseriesPoint{
-				Point: &cloudmonitoring.Point{
-					Int64Value: value,
-					Start:      time.Now().Format(time.RFC3339),
-					End:        time.Now().Format(time.RFC3339),
-				},
-				TimeseriesDesc: &cloudmonitoring.TimeseriesDescriptor{
-					Metric:  prefix + name,
-					Project: c.projectID,
-				},
-			},
-		},
-	}).Do()
-
-	if err != nil {
-		return err
-	}
-
-	return nil
+type gouge struct {
+	name   string
+	client *client
 }
 
 type optionFunc func(*client)
@@ -97,6 +52,64 @@ func ProjectID(projectID string) optionFunc {
 	return func(c *client) {
 		c.projectID = projectID
 	}
+}
+
+func (c *client) NewGauge(name string) (Gauge, error) {
+	cloud, err := cloudmonitorClient(c.oauthEmail, c.oauthPrivateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &cloudmonitoring.MetricDescriptor{
+		Name:    prefix + name,
+		Project: c.projectID,
+		TypeDescriptor: &cloudmonitoring.MetricDescriptorTypeDescriptor{
+			MetricType: "gauge",
+			ValueType:  "int64",
+		},
+	}
+
+	_, err = cloud.MetricDescriptors.Create(c.projectID, req).Do()
+
+	if err != nil {
+		return nil, err
+	}
+
+	g := &gouge{
+		name:   name,
+		client: c,
+	}
+
+	return g, nil
+}
+
+func (g *gouge) Set(value int64) error {
+	cloud, err := cloudmonitorClient(g.client.oauthEmail, g.client.oauthPrivateKey)
+	if err != nil {
+		return err
+	}
+
+	_, err = cloud.Timeseries.Write(g.client.projectID, &cloudmonitoring.WriteTimeseriesRequest{
+		Timeseries: []*cloudmonitoring.TimeseriesPoint{
+			&cloudmonitoring.TimeseriesPoint{
+				Point: &cloudmonitoring.Point{
+					Int64Value: value,
+					Start:      time.Now().Format(time.RFC3339),
+					End:        time.Now().Format(time.RFC3339),
+				},
+				TimeseriesDesc: &cloudmonitoring.TimeseriesDescriptor{
+					Metric:  prefix + g.name,
+					Project: g.client.projectID,
+				},
+			},
+		},
+	}).Do()
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func cloudmonitorClient(email, privateKey string) (*cloudmonitoring.Service, error) {
