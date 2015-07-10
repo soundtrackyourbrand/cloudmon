@@ -11,10 +11,12 @@ import (
 
 const prefix = "custom.cloudmonitoring.googleapis.com/"
 
+// A Client is a cloud monitor client.
 type Client interface {
 	NewGauge(name string) (Gauge, error)
 }
 
+// Gauge is a cloud monitor metric that represent a single int value a specific time
 type Gauge interface {
 	Set(value int64) error
 }
@@ -32,6 +34,7 @@ type gouge struct {
 
 type optionFunc func(*client)
 
+// NewClient creates a new cloud monitor client
 func NewClient(opts ...optionFunc) *client {
 	c := &client{}
 	for _, fn := range opts {
@@ -41,6 +44,7 @@ func NewClient(opts ...optionFunc) *client {
 	return c
 }
 
+// OAuthSettings is a option function that can be sent as an argument to NewClient to setup oauth
 func OAuthSettings(email, privateKey string) optionFunc {
 	return func(c *client) {
 		c.oauthEmail = email
@@ -48,12 +52,14 @@ func OAuthSettings(email, privateKey string) optionFunc {
 	}
 }
 
+// ProjectID is a option function that can be sent as an argument to NewClient to set google project id
 func ProjectID(projectID string) optionFunc {
 	return func(c *client) {
 		c.projectID = projectID
 	}
 }
 
+// NewGauge creates a new int gauge in google cloud monitoring
 func (c *client) NewGauge(name string) (Gauge, error) {
 	cloud, err := cloudmonitorClient(c.oauthEmail, c.oauthPrivateKey)
 	if err != nil {
@@ -83,6 +89,7 @@ func (c *client) NewGauge(name string) (Gauge, error) {
 	return g, nil
 }
 
+// Set updates the value of the Gauge in google cloud monitoring
 func (g *gouge) Set(value int64) error {
 	cloud, err := cloudmonitorClient(g.client.oauthEmail, g.client.oauthPrivateKey)
 	if err != nil {
