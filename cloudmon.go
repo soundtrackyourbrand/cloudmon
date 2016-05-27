@@ -6,10 +6,10 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/jwt"
-	"google.golang.org/api/cloudmonitoring/v2beta2"
+	"google.golang.org/api/monitoring/v3"
 )
 
-const prefix = "custom.cloudmonitoring.googleapis.com/"
+const prefix = "custom.googleapis.com/"
 
 // A Client is a cloud monitor client.
 type Client interface {
@@ -66,17 +66,13 @@ func (c *client) NewGauge(name string) (Gauge, error) {
 		return nil, err
 	}
 
-	req := &cloudmonitoring.MetricDescriptor{
-		Name:    prefix + name,
-		Project: c.projectID,
-		TypeDescriptor: &cloudmonitoring.MetricDescriptorTypeDescriptor{
-			MetricType: "gauge",
-			ValueType:  "int64",
-		},
+	descriptor := &monitoring.MetricDescriptor{
+		Type:       prefix + name,
+		MetricKind: "GAUGE",
+		ValueType:  "INT64",
 	}
 
-	_, err = cloud.MetricDescriptors.Create(c.projectID, req).Do()
-
+	_, err = cloud.Projects.MetricDescriptors.Create("projects/"+c.projectID, descriptor).Do()
 	if err != nil {
 		return nil, err
 	}
@@ -96,38 +92,40 @@ func (g *gouge) Set(value int64) error {
 		return err
 	}
 
-	_, err = cloud.Timeseries.Write(g.client.projectID, &cloudmonitoring.WriteTimeseriesRequest{
-		Timeseries: []*cloudmonitoring.TimeseriesPoint{
-			&cloudmonitoring.TimeseriesPoint{
-				Point: &cloudmonitoring.Point{
-					Int64Value: value,
-					Start:      time.Now().Format(time.RFC3339),
-					End:        time.Now().Format(time.RFC3339),
+	_, err = cloud.Projects.TimeSeries.Create("projects/"+g.client.projectID, &monitoring.CreateTimeSeriesRequest{
+		TimeSeries: []*monitoring.TimeSeries{
+			&monitoring.TimeSeries{
+				Points: []*monitoring.Point{
+					&monitoring.Point{
+						Interval: &monitoring.TimeInterval{
+							StartTime: time.Now().Format(time.RFC3339),
+							EndTime:   time.Now().Format(time.RFC3339),
+						},
+						Value: &monitoring.TypedValue{
+							Int64Value:      value,
+							ForceSendFields: []string{"Int64Value"},
+						},
+					},
 				},
-				TimeseriesDesc: &cloudmonitoring.TimeseriesDescriptor{
-					Metric:  prefix + g.name,
-					Project: g.client.projectID,
+				Metric: &monitoring.Metric{
+					Type: prefix + g.name,
 				},
 			},
 		},
 	}).Do()
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
-func cloudmonitorClient(email, privateKey string) (*cloudmonitoring.Service, error) {
+func cloudmonitorClient(email, privateKey string) (*monitoring.Service, error) {
 	conf := &jwt.Config{
 		Email:      email,
 		PrivateKey: []byte(privateKey),
 		Scopes: []string{
-			cloudmonitoring.MonitoringScope,
+			monitoring.MonitoringScope,
 		},
 		TokenURL: google.JWTTokenURL,
 	}
 
-	return cloudmonitoring.New(conf.Client(oauth2.NoContext))
+	return monitoring.New(conf.Client(oauth2.NoContext))
 }
